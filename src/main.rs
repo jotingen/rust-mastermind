@@ -1,5 +1,8 @@
+use clap::Parser;
 use rand::distributions::{Distribution, Standard};
 use rand::Rng;
+
+//Mastermind
 
 #[derive(Debug, PartialEq)]
 enum CodeCell {
@@ -10,8 +13,6 @@ enum CodeCell {
     M, //Magenta
     C, //Cyan
 }
-#[derive(Debug)]
-struct Code([CodeCell; 4]);
 impl std::fmt::Display for CodeCell {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match *self {
@@ -36,6 +37,9 @@ impl Distribution<CodeCell> for Standard {
         }
     }
 }
+
+#[derive(Debug)]
+struct Code(Vec<CodeCell>);
 impl std::fmt::Display for Code {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut s: String = "".to_owned();
@@ -46,14 +50,13 @@ impl std::fmt::Display for Code {
     }
 }
 impl Code {
-    pub fn new() -> Code {
+    pub fn new(peg_count: u8) -> Code {
+        let mut vector: Vec<CodeCell> = Vec::new();
+        for _ in 0..peg_count {
+        vector.push(rand::random());
+        }
         Code {
-            0: [
-                rand::random(),
-                rand::random(),
-                rand::random(),
-                rand::random(),
-            ],
+            0: vector,
         }
     }
 }
@@ -63,7 +66,6 @@ enum ResultCell {
     W, //White
     K, //Black
 }
-struct Result([Option<ResultCell>; 4]);
 impl std::fmt::Display for ResultCell {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match *self {
@@ -72,6 +74,7 @@ impl std::fmt::Display for ResultCell {
         }
     }
 }
+struct Result(Vec<Option<ResultCell>>);
 impl std::fmt::Display for Result {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut s: String = "".to_owned();
@@ -84,45 +87,67 @@ impl std::fmt::Display for Result {
         f.write_str(&s)
     }
 }
+impl Result {
+    pub fn new(peg_count: u8) -> Result {
+        let mut vector: Vec<Option<ResultCell>> = Vec::new();
+        for _ in 0..peg_count {
+        vector.push(None);
+        }
+        Result {
+            0: vector,
+        }
+    }
+}
 
 #[derive(Debug)]
 struct MasterMind {
-    secret: Code,
+    code: Code,
+    peg_count: usize,
+    guesses: u8,
 }
 impl MasterMind {
-    pub fn new() -> MasterMind {
+    pub fn new(peg_count: u8) -> MasterMind {
         MasterMind {
-            secret: Code::new(),
+            code: Code::new(peg_count),
+            peg_count: peg_count as usize,
+            guesses: 0,
         }
     }
-    pub fn set_secret(&mut self, secret: Code) {
-        self.secret = secret;
+    pub fn set_code(&mut self, code: Code) {
+        self.code = code;
     }
     pub fn guess(&self, guess: &Code) -> Result {
-        let mut result = Result {
-            0: [None, None, None, None],
+        let mut result= Result::new(self.peg_count.try_into().unwrap());
+
+        for _ in 0..self.peg_count {
+            result.0.push(None);
         };
 
-        let mut used_code = [false, false, false, false];
-        let mut used_guess = [false, false, false, false];
+        let mut used_code = Vec::new();
+        let mut used_guess = Vec::new();
         let mut in_position = 0;
         let mut in_code = 0;
+        //Scan for correct position
+        for _ in 0..self.peg_count {
+            used_code.push(false);
+            used_guess.push(false);
+        }
 
         //Scan for correct position
-        for n in 0..4 {
-            if guess.0[n] == self.secret.0[n] {
+        for n in 0..self.peg_count {
+            if guess.0[n] == self.code.0[n] {
                 used_code[n] = true;
                 used_guess[n] = true;
                 in_position += 1;
             }
         }
         //Scan for used in code, but not already used for position
-        for n in 0..4 {
+        for n in 0..self.peg_count {
             if !used_guess[n] {
-                for n_secret in 0..4 {
+                for n_code in 0..self.peg_count {
                     if !used_code[n] {
-                        if guess.0[n] == self.secret.0[n_secret] {
-                            used_code[n_secret] = true;
+                        if guess.0[n] == self.code.0[n_code] {
+                            used_code[n_code] = true;
                             used_guess[n] = true;
                             in_code += 1;
                         }
@@ -132,7 +157,7 @@ impl MasterMind {
         }
 
         //Build result
-        for n in 0..4 {
+        for n in 0..self.peg_count {
             if in_position > 0 {
                 result.0[n] = Some(ResultCell::K);
                 in_position -= 1;
@@ -146,36 +171,44 @@ impl MasterMind {
     }
 }
 
+#[derive(Parser, Debug)]
+#[clap(author, version, about, long_about = None)]
+struct Args {
+    /// Number of pegs
+    #[clap(short, long, default_value_t = 4)]
+    peg_count: u8,
+
+    /// Number of guesses
+    #[clap(short, long, default_value_t = 12)]
+    guess_count: u8,
+}
+
 fn main() {
-    let mut mm = MasterMind::new();
+    let args = Args::parse();
+    println!("{:?}", args);
+
+    let mut mm = MasterMind::new(args.peg_count);
     println!("{:?}", mm);
-    println!("{}", mm.secret);
+    println!("{}", mm.code);
 
-    mm = MasterMind::new();
-    println!("{}", mm.secret);
+    mm = MasterMind::new(args.peg_count);
+    println!("{}", mm.code);
 
-    mm = MasterMind::new();
-    println!("{}", mm.secret);
+    mm = MasterMind::new(args.peg_count);
+    println!("{}", mm.code);
 
-    mm = MasterMind::new();
-    println!("{}", mm.secret);
+    mm = MasterMind::new(args.peg_count);
+    println!("{}", mm.code);
 
     println!();
 
-    let mut guess = Code::new();
+    let mut guess = Code::new(args.peg_count);
     println!("{} {}", &guess, mm.guess(&guess));
-    guess = Code::new();
+    guess = Code::new(args.peg_count);
     println!("{} {}", &guess, mm.guess(&guess));
-    guess = Code::new();
+    guess = Code::new(args.peg_count);
     println!("{} {}", &guess, mm.guess(&guess));
-    guess = Code::new();
+    guess = Code::new(args.peg_count);
     println!("{} {}", &guess, mm.guess(&guess));
-    //mm.set_secret(Code{ cell: [Some(Cell::R), Some(Cell::G), Some(Cell::B), Some(Cell::Y)]});
-    //println!("{}",mm.secret);
-    //mm.set_secret(Code{ cell: [Some(Cell::K), Some(Cell::W), Some(Cell::K), Some(Cell::W)]});
-    //println!("{}",mm.secret);
-    //mm.set_secret(Code{ cell: [Some(Cell::R), Some(Cell::G), Some(Cell::B), Some(Cell::Y)]});
-    //println!("{}",mm.guess(Code{ cell: [Some(Cell::R), Some(Cell::B), Some(Cell::R), None]}));
 
-    println!("Hello, world!");
 }
