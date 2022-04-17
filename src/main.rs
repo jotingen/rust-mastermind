@@ -1,6 +1,14 @@
+#[macro_use]
+extern crate crossterm;
+
 use clap::Parser;
+use crossterm::cursor;
+use crossterm::event::{read, Event, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::style::Print;
+use crossterm::terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType};
 use rand::distributions::{Distribution, Standard};
 use rand::Rng;
+use std::io::{stdout, Stdout, Write};
 
 //Mastermind
 
@@ -12,6 +20,7 @@ enum CodeCell {
     Y, //Yellow
     M, //Magenta
     C, //Cyan
+    E, //Empty
 }
 impl std::fmt::Display for CodeCell {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -22,6 +31,7 @@ impl std::fmt::Display for CodeCell {
             CodeCell::Y => write!(f, "\x1b[33;43m \x1b[0m"),
             CodeCell::M => write!(f, "\x1b[35;45m \x1b[0m"),
             CodeCell::C => write!(f, "\x1b[36;46m \x1b[0m"),
+            CodeCell::E => write!(f, "\x1b[0m "),
         }
     }
 }
@@ -53,29 +63,28 @@ impl Code {
     pub fn new(peg_count: u8) -> Code {
         let mut vector: Vec<CodeCell> = Vec::new();
         for _ in 0..peg_count {
-        vector.push(rand::random());
+            vector.push(rand::random());
         }
-        Code {
-            0: vector,
-        }
+        Code { 0: vector }
     }
 }
 
-#[derive(Debug)]
-enum ResultCell {
+#[derive(Debug, PartialEq)]
+enum ScoreCell {
     W, //White
     K, //Black
 }
-impl std::fmt::Display for ResultCell {
+impl std::fmt::Display for ScoreCell {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match *self {
-            ResultCell::W => write!(f, "\x1b[37;47m \x1b[0m"),
-            ResultCell::K => write!(f, "\x1b[91;101m \x1b[0m"),
+            ScoreCell::W => write!(f, "\x1b[37;47m \x1b[0m"),
+            ScoreCell::K => write!(f, "\x1b[91;101m \x1b[0m"),
         }
     }
 }
-struct Result(Vec<Option<ResultCell>>);
-impl std::fmt::Display for Result {
+#[derive(Debug, PartialEq)]
+struct Score(Vec<Option<ScoreCell>>);
+impl std::fmt::Display for Score {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut s: String = "".to_owned();
         for c in &self.0 {
@@ -87,15 +96,13 @@ impl std::fmt::Display for Result {
         f.write_str(&s)
     }
 }
-impl Result {
-    pub fn new(peg_count: u8) -> Result {
-        let mut vector: Vec<Option<ResultCell>> = Vec::new();
+impl Score {
+    pub fn new(peg_count: u8) -> Score {
+        let mut vector: Vec<Option<ScoreCell>> = Vec::new();
         for _ in 0..peg_count {
-        vector.push(None);
+            vector.push(None);
         }
-        Result {
-            0: vector,
-        }
+        Score { 0: vector }
     }
 }
 
@@ -116,12 +123,12 @@ impl MasterMind {
     pub fn set_code(&mut self, code: Code) {
         self.code = code;
     }
-    pub fn guess(&self, guess: &Code) -> Result {
-        let mut result= Result::new(self.peg_count.try_into().unwrap());
+    pub fn guess(&self, guess: &Code) -> Score {
+        let mut score = Score::new(self.peg_count.try_into().unwrap());
 
         for _ in 0..self.peg_count {
-            result.0.push(None);
-        };
+            score.0.push(None);
+        }
 
         let mut used_code = Vec::new();
         let mut used_guess = Vec::new();
@@ -145,12 +152,10 @@ impl MasterMind {
         for n in 0..self.peg_count {
             if !used_guess[n] {
                 for n_code in 0..self.peg_count {
-                    if !used_code[n] {
-                        if guess.0[n] == self.code.0[n_code] {
-                            used_code[n_code] = true;
-                            used_guess[n] = true;
-                            in_code += 1;
-                        }
+                    if !used_code[n] && guess.0[n] == self.code.0[n_code] {
+                        used_code[n_code] = true;
+                        used_guess[n] = true;
+                        in_code += 1;
                     }
                 }
             }
@@ -159,15 +164,96 @@ impl MasterMind {
         //Build result
         for n in 0..self.peg_count {
             if in_position > 0 {
-                result.0[n] = Some(ResultCell::K);
+                score.0[n] = Some(ScoreCell::K);
                 in_position -= 1;
             } else if in_code > 0 {
-                result.0[n] = Some(ResultCell::W);
+                score.0[n] = Some(ScoreCell::W);
                 in_code -= 1;
             }
         }
 
-        result
+        score
+    }
+    pub fn get_guess(&self, stdout: &mut Stdout) -> Result<Code, &'static str> {
+        ////clearing the screen, going to top left corner and printing welcoming message
+        //execute!(stdout, Clear(ClearType::All), cursor::MoveTo(0, 0), Print(r#"ctrl + q to exit, ctrl + h to print "Hello world", alt + t to print "crossterm is cool""#))
+        //    .unwrap();
+
+        //execute!(stdout, Print(r#"ctrl + q to exit, ctrl + h to print "Hello world", alt + t to print "crossterm is cool""#))
+        //    .unwrap();
+
+        let mut guesses: Vec<CodeCell> = vec![];
+        while guesses.len() < self.peg_count {
+            //going to top left corner
+            //execute!(stdout, cursor::MoveTo(0, 0)).unwrap();
+
+            match read().unwrap() {
+                Event::Key(KeyEvent {
+                    code: KeyCode::Char('r'),
+                    modifiers: KeyModifiers::NONE,
+                    //clearing the screen and printing our message
+                }) => {
+                    execute!(stdout, Print(CodeCell::R.to_string())).unwrap();
+                    guesses.push(CodeCell::R)
+                }
+                Event::Key(KeyEvent {
+                    code: KeyCode::Char('g'),
+                    modifiers: KeyModifiers::NONE,
+                }) => {
+                    execute!(stdout, Print(CodeCell::G.to_string())).unwrap();
+                    guesses.push(CodeCell::G)
+                }
+                Event::Key(KeyEvent {
+                    code: KeyCode::Char('b'),
+                    modifiers: KeyModifiers::NONE,
+                }) => {
+                    execute!(stdout, Print(CodeCell::B.to_string())).unwrap();
+                    guesses.push(CodeCell::B)
+                }
+                Event::Key(KeyEvent {
+                    code: KeyCode::Char('y'),
+                    modifiers: KeyModifiers::NONE,
+                }) => {
+                    execute!(stdout, Print(CodeCell::Y.to_string())).unwrap();
+                    guesses.push(CodeCell::Y)
+                }
+                Event::Key(KeyEvent {
+                    code: KeyCode::Char('m'),
+                    modifiers: KeyModifiers::NONE,
+                }) => {
+                    execute!(stdout, Print(CodeCell::M.to_string())).unwrap();
+                    guesses.push(CodeCell::M)
+                }
+                Event::Key(KeyEvent {
+                    code: KeyCode::Char('c'),
+                    modifiers: KeyModifiers::NONE,
+                }) => {
+                    execute!(stdout, Print(CodeCell::C.to_string())).unwrap();
+                    guesses.push(CodeCell::C)
+                }
+                Event::Key(KeyEvent {
+                    code: KeyCode::Backspace,
+                    modifiers: KeyModifiers::NONE,
+                }) => {
+                    execute!(stdout, cursor::MoveLeft(1), Print(" "), cursor::MoveLeft(1)).unwrap();
+                    if !guesses.is_empty() {
+                        guesses.pop().unwrap();
+                    }
+                }
+                //Event::Key(KeyEvent {
+                //    code: KeyCode::Enter,
+                //    modifiers: KeyModifiers::NONE,
+                //}) => break,
+                Event::Key(KeyEvent {
+                    code: KeyCode::Char('x'),
+                    modifiers: KeyModifiers::NONE,
+                }) => return Err("User quit"),
+                _ => (),
+            }
+        }
+        let mut code = Code::new(self.peg_count as u8);
+        code.0 = guesses;
+        Ok(code)
     }
 }
 
@@ -211,4 +297,33 @@ fn main() {
     guess = Code::new(args.peg_count);
     println!("{} {}", &guess, mm.guess(&guess));
 
+    println!();
+
+    let mut stdout = stdout();
+
+    enable_raw_mode().unwrap();
+    //execute!(stdout, Clear(ClearType::All), cursor::MoveTo(0, 0), Print(r#"ctrl + q to exit, ctrl + h to print "Hello world", alt + t to print "crossterm is cool""#))
+    //        .unwrap();
+    execute!(
+        stdout,
+        Clear(ClearType::All),
+        cursor::MoveTo(0, 0),
+        Print(r#"Enter guesses <r,b,g,y,c,m>, or x to exit"#),
+        cursor::MoveTo(0, 1),
+    )
+    .unwrap();
+
+    let mut perfect_score = Score::new(mm.peg_count as u8);
+    for n in 0..mm.peg_count {
+        perfect_score.0[n] = Some(ScoreCell::K);
+    }
+    while let Ok(guess) = mm.get_guess(&mut stdout) {
+        let score = mm.guess(&guess);
+        println!(" {}", score);
+        if score == perfect_score {
+            break;
+        };
+    }
+
+    disable_raw_mode().unwrap();
 }
